@@ -1,0 +1,34 @@
+hello: world
+
+{options}
+test: true
+x: false
+Longer::
+
+this is a block
+
+::Longer
+
+{.child}
+block: true
+{}
+
+{}
+
+not: in options
+
+[list]
+
+a: 1
+b: 2
+{.c.x}
+d: 1
+{}
+
+a: 3
+
+a: 4
+
+[]
+
+closing: out of list
