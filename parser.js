@@ -108,7 +108,7 @@ class Parser {
           this.push(target);
           list.push(target);
         }
-        this.setPath(target, key, value);
+        this.setPath(target, key, value.trim());
         continue;
       }
 

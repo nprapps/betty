@@ -15,7 +15,7 @@ module.exports = {
     for (var c of text) {
       if (c in quick) {
         if (buffer.length) {
-          tokens.push({ type: "TEXT", value: buffer.join("").trim() });
+          tokens.push({ type: "TEXT", value: buffer.join("") });
           buffer = [];
         }
         tokens.push({ type: quick[c], value: c });
@@ -24,7 +24,7 @@ module.exports = {
       }
     }
     if (buffer.length) {
-      tokens.push({ type: "TEXT", value: buffer.join("").trim() });
+      tokens.push({ type: "TEXT", value: buffer.join("") });
     }
     return tokens;
   }

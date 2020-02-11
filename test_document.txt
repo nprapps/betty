@@ -7,6 +7,13 @@ Longer::
 
 this is a block
 
+It can contain markup
+
+[and]
+it won't care
+
+this: isn't a field
+
 ::Longer
 
 {.child}
