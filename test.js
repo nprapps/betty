@@ -9,12 +9,14 @@ var parsed = parse(text, {
     if (value == "true" || value == "false") {
       return value == "true";
     }
+    if (typeof value == "string" && value.match(/^\d{4}-\d{2}-\d{2}T\d{1,2}:\d{2}:\d{2}.\d+Z$/)) {
+      return Date.parse(value);
+    }
     var attempt = parseFloat(value);
     if (!isNaN(attempt)) return attempt;
     return value;
   }
 });
-
 
 assert.strict.deepEqual(parsed, {
   hello: "world",
@@ -39,6 +41,7 @@ this: isn't a field`,
     { a: 3 },
     { a: 4 }
   ],
-  closing: "out of list"
+  closing: "out of list",
+  timestamp: Date.parse("2020-02-10T15:00:00.000Z")
 });
 console.log("PASSED: Expected value matched parse")

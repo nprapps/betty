@@ -36,6 +36,16 @@ class Parser {
     return sliced;
   }
 
+  advanceUntilValue(v) {
+    var acc = [];
+    var [next] = this.peek();
+    while (next && next.value != v) {
+      acc.push(this.advance()[0]);
+      [next] = this.peek();
+    }
+    return acc;
+  }
+
   peek(amount = 1) {
     var sliced = this.tokens.slice(this.index, this.index + amount);
     return sliced;
@@ -98,7 +108,11 @@ class Parser {
     while (this.index < this.tokens.length) {
       // simple value fields
       if (this.match("TEXT", "COLON", "TEXT")) {
-        var [key, _, value] = this.advance(3).map(t => t.value);
+        var [key] = this.advance(2).map(t => t.value);
+        // get values up through the line break
+        var value = this.advanceUntilValue("\n").map(t => t.value).join("");
+        // move past the line break;
+        this.advance();
         var target = this.top;
         if (key in target && this.stack[this.stack.length - 2] instanceof Array) {
           // new list item
@@ -114,12 +128,13 @@ class Parser {
 
       // multiline field
       if (this.match("TEXT", "COLON", "COLON", "TEXT")) {
-        var [key] = this.advance(3).map(t => t.value);
+        var [key] = this.advance(3).map(t => t.value.trim());
         this.log(`Opening multiline value at ${key}`);
         var words = [this.advance().value];
         while (this.index < this.tokens.length) {
           // advance until we see the ending tag
-          if (this.match("COLON", "COLON") && this.peek(3)[2].value == key) {
+          var third = this.peek(3)[2].value.trim();
+          if (this.match("COLON", "COLON") && third.toLowerCase() == key.toLowerCase()) {
             this.advance(3);
             break;
           }
