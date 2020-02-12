@@ -24,18 +24,40 @@ block: true
 
 not: in options
 
+[+freeform]
+this is a test block
+
+key: value
+[]
+
+[strings]
+* test
+* a
+* b
+* longer string goes here: the sequel
+
 [list]
 
 a: 1
 b: 2
 {.c.x}
 d: 1
+lengthy::
+
+deeply nested multiline
+
+::lengthy
 {}
 
 a: 3
 
 a: 4
 
+[parent]
+[.nested]
+* one
+* two
+[]
 []
 
 closing: out of list

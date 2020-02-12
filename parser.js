@@ -46,6 +46,10 @@ class Parser {
     return acc;
   }
 
+  restOfLine() {
+    return this.advanceUntilValue("\n").map(t => t.value).join("").trim();
+  }
+
   peek(amount = 1) {
     var sliced = this.tokens.slice(this.index, this.index + amount);
     return sliced;
@@ -78,7 +82,7 @@ class Parser {
 
   setPath(object, keypath, value) {
     keypath = this.normalizeKeypath(keypath);
-    var terminal = keypath.pop();
+    var terminal = keypath.pop().replace(/\+/g, "");
     var branch = object;
     for (var k of keypath) {
       if (!(k in branch)) {
@@ -100,29 +104,57 @@ class Parser {
     return this.top;
   }
 
+  reset(object) {
+    this.stack = [this.root];
+    if (object) this.push(object);
+  }
+
+  addToArray(target, key, value) {
+    if (target.freeform) {
+      target.push({ type: key, value });
+    } else {
+      // add to the last object in the array
+      var last = target[target.length - 1];
+      if (!last || this.getPath(last, key)) {
+        last = {};
+        target.push(last);
+      }
+      this.setPath(last, key, value);
+    }
+  }
+
+  isRelative(key) {
+    return key[0] == ".";
+  }
+
   getTarget(key) {
-    return key[0] == "." ? this.top : this.root;
+    if (this.isRelative(key)) {
+      return this.top;
+    }
+    this.reset();
+    return this.root;
   }
 
   parse() {
     while (this.index < this.tokens.length) {
+
       // simple value fields
       if (this.match("TEXT", "COLON", "TEXT")) {
         var [key] = this.advance(2).map(t => t.value);
         // get values up through the line break
-        var value = this.advanceUntilValue("\n").map(t => t.value).join("");
-        // move past the line break;
-        this.advance();
+        var value = this.restOfLine();
         var target = this.top;
-        if (key in target && this.stack[this.stack.length - 2] instanceof Array) {
-          // new list item
-          this.pop();
-          var list = this.top;
-          target = {};
-          this.push(target);
-          list.push(target);
+        if (this.top instanceof Array) {
+          // simple arrays can't contain keyed values
+          if (this.top.simple) {
+            this.pop();
+            this.setPath(this.top, key, value);
+          } else {
+            this.addToArray(this.top, key, value);
+          }
+        } else {
+          this.setPath(this.top, key, value);
         }
-        this.setPath(target, key, value.trim());
         continue;
       }
 
@@ -141,25 +173,49 @@ class Parser {
           var [word] = this.advance();
           words.push(word.value);
         }
-        if (key in target && this.stack[this.stack.length - 2] instanceof Array) {
-          // new list item
-          this.pop();
-          var list = this.top;
-          target = {};
-          this.push(target);
-          list.push(target);
+        var target = this.top;
+        var value = words.join("").trim();
+        if (this.top instanceof Array) {
+          // simple arrays can't contain keyed values
+          if (this.top.simple) {
+            this.pop();
+            this.setPath(this.top, key, value);
+          } else {
+            this.addToArray(this.top, key, value);
+          }
+        } else {
+          this.setPath(this.top, key, value);
         }
-        this.setPath(this.top, key, words.join("").trim());
         continue;
+      }
+
+      // string list item
+      if (this.match("STAR", "TEXT")) {
+        // pass the star
+        this.advance();
+        var value = this.restOfLine();
+        if (this.top instanceof Array) {
+          this.top.push(value);
+          Object.defineProperty(this.top, "simple", { value: true, enumerable: false });
+        }
       }
 
       // entering an object
       if (this.match("LEFT_BRACE", "TEXT", "RIGHT_BRACE")) {
         var [_, key] = this.advance(3).map(t => t.value);
         this.log(`Creating object at ${key}`);
-        var target = this.getTarget(key);
+        // by default, creates a new object at the root
         var object = {};
-        this.setPath(target, key, object);
+        var target = this.top;
+        if (!this.isRelative(key)) {
+          this.reset();
+          target = this.root;
+        }
+        if (target instanceof Array) {
+          this.addToArray(target, key, object);
+        } else {
+          this.setPath(target, key, object);
+        }
         this.push(object);
         continue;
       }
@@ -171,16 +227,26 @@ class Parser {
         continue;
       }
 
+      // arrays
       if (this.match("LEFT_BRACKET", "TEXT", "RIGHT_BRACKET")) {
         var [_, key] = this.advance(3).map(t => t.value);
         this.log(`Creating array at ${key}`);
-        var target = this.getTarget(key);
+        var target = this.top;
+        if (!this.isRelative(key)) {
+          target = this.root;
+          this.reset();
+        }
         var array = [];
-        this.setPath(target, key, array);
+        if (target instanceof Array) {
+          this.addToArray(target, key, array);
+        } else {
+          this.setPath(target, key, array);
+        }
         this.push(array);
-        var item = {};
-        this.push(item);
-        array.push(item);
+        var last = this.normalizeKeypath(key).pop();
+        if (last[0] == "+") {
+          Object.defineProperty(array, "freeform", { value: true, enumerable: false });
+        }
         continue;
       }
 
@@ -199,6 +265,12 @@ class Parser {
         if (!peek.value.trim()) {
           this.advance();
           continue;
+        } else {
+          // freeform arrays can accumulate text
+          if (this.top.freeform) {
+            var value = 
+            this.top.push({ type: "text", value: this.restOfLine() })
+          }
         }
       }
 

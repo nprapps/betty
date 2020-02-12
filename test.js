@@ -4,6 +4,7 @@ var { parse } = require("./index");
 
 var text = fs.readFileSync("test_document.txt", "utf-8");
 var parsed = parse(text, {
+  verbose: true,
   onFieldName: t => t.toLowerCase(),
   onValue: function(value) {
     if (value == "true" || value == "false") {
@@ -17,6 +18,7 @@ var parsed = parse(text, {
     return value;
   }
 });
+console.log(JSON.stringify(parsed, null, 2));
 
 assert.strict.deepEqual(parsed, {
   hello: "world",
@@ -36,10 +38,30 @@ this: isn't a field`,
     }
   },
   not: "in options",
+
+  freeform: [
+    { type: "text", value: "this is a test block" },
+    { type: "key", value: "value" }
+  ],
+  strings: [
+    "test",
+    "a",
+    "b",
+    "longer string goes here: the sequel"
+  ],
+
   list: [
-    { a: 1, b: 2, c: { x: { d: 1 } } },
+    { a: 1, b: 2, c: { x: { d: 1, lengthy: "deeply nested multiline" } } },
     { a: 3 },
     { a: 4 }
+  ],
+  parent: [
+    {
+      nested: [
+        "one",
+        "two"
+      ]
+    }
   ],
   closing: "out of list",
   timestamp: Date.parse("2020-02-10T15:00:00.000Z")
