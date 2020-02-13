@@ -16,6 +16,12 @@ this: isn't a field
 
 ::Longer
 
+multiline:
+
+this is a standard multiline value
+
+:end
+
 {.child}
 block: true
 {}

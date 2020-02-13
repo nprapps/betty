@@ -33,6 +33,7 @@ It can contain markup
 it won't care
 
 this: isn't a field`,
+    multiline: "this is a standard multiline value",
     child: {
       block: true
     }

@@ -5,14 +5,15 @@ var quick = {
   "]": "RIGHT_BRACKET",
   ":": "COLON",
   "*": "STAR",
-  "\n": "TEXT"
+  "\n": "TEXT",
+  "\\": "BACKSLASH"
 }
 
 module.exports = {
   tokenize(text) {
     var tokens = [];
     var buffer = [];
-    for (var c of text) {
+    for (var c of text.trim()) {
       if (c in quick) {
         if (buffer.length) {
           tokens.push({ type: "TEXT", value: buffer.join("") });
