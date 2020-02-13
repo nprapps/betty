@@ -2,18 +2,19 @@ var identity = c => c;
 
 var ARRAY_TYPE = Symbol();
 
-var setArrayType = (array, value) => Object.defineProperty(array, ARRAY_TYPE, {
-  value,
-  enumerable: false,
-  configurable: true
-});
+var setArrayType = (array, value) =>
+  Object.defineProperty(array, ARRAY_TYPE, {
+    value,
+    enumerable: false,
+    configurable: true
+  });
 
 var defaultOptions = {
   verbose: false,
   onFieldName: identity,
   onValue: identity,
   allowDuplicateKeys: true
-}
+};
 
 class Parser {
   constructor(tokenList, options = {}) {
@@ -95,10 +96,10 @@ class Parser {
   }
 
   normalizeKeypath(keypath) {
-    if (typeof keypath == "string") keypath = keypath.split(".")
+    if (typeof keypath == "string") keypath = keypath.split(".");
     keypath = keypath.filter(identity);
     keypath = keypath.map(this.options.onFieldName);
-    return keypath
+    return keypath;
   }
 
   getPath(object, keypath) {
@@ -179,9 +180,12 @@ class Parser {
     this.log(`Encountered skip tag`);
     this.advance(2);
     this.remember(-1);
-    while (!this.matchValues(":", /^endskip/i) && (this.index < this.tokens.length - 2)) {
+    while (
+      !this.matchValues(":", /^endskip/i) &&
+      this.index < this.tokens.length - 2
+    ) {
       var [skipped] = this.advance();
-      this.log(`Skipping text: "${skipped.value}"`)
+      this.log(`Skipping text: "${skipped.value}"`);
     }
     this.restOfLine();
   }
@@ -192,7 +196,7 @@ class Parser {
     var k = key.value.trim();
     // check for valid keys
     if (k.match(/[\s]/)) {
-      this.log(`Invalid key found: ${k}`)
+      this.log(`Invalid key found: ${k}`);
       return this.backBuffer.push(this.restOfLine());
     }
     this.advance(2);
@@ -214,9 +218,12 @@ class Parser {
     var words = [this.advance().value];
     while (this.index < this.tokens.length) {
       // advance until we see the ending tag
-      var third = this.peek(3)[2]
+      var third = this.peek(3)[2];
       third = third ? third.value.trim() : "";
-      if (this.match("COLON", "COLON") && third.toLowerCase() == key.toLowerCase()) {
+      if (
+        this.match("COLON", "COLON") &&
+        third.toLowerCase() == key.toLowerCase()
+      ) {
         this.advance(3);
         break;
       }
@@ -232,7 +239,10 @@ class Parser {
     // pass the star
     var [star] = this.advance();
     var value = this.restOfLine();
-    if (this.top instanceof Array && (!this.top[ARRAY_TYPE] || this.top[ARRAY_TYPE] == "simple")) {
+    if (
+      this.top instanceof Array &&
+      (!this.top[ARRAY_TYPE] || this.top[ARRAY_TYPE] == "simple")
+    ) {
       this.log(`Assigning simple list value ${value.trim()}`);
       this.remember(null);
       this.top.push(value.trim());
@@ -243,7 +253,7 @@ class Parser {
     } else {
       // accumulate this
       value = star.value + value;
-      this.log(`Accumulating simple list string ${value}`)
+      this.log(`Accumulating simple list string ${value}`);
       this.backBuffer.push({ type: "text", value });
     }
   }
@@ -287,7 +297,7 @@ class Parser {
     var array = [];
     var last = this.normalizeKeypath(key).pop();
     if (last[0] == "+") {
-      this.log(`Setting array as freeform: ${last}`)
+      this.log(`Setting array as freeform: ${last}`);
       setArrayType(array, "freeform");
     }
     this.appendValue(target, key, array);
@@ -306,7 +316,8 @@ class Parser {
     // assign to the last key and clear buffer
     var value = "\n" + this.backBuffer.map(t => t.value).join("");
     var target = this.top;
-    var join = (e, v) => (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
+    var join = (e, v) =>
+      (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
     console.log(this.lastKey);
     if (target[ARRAY_TYPE] == "simple" && !this.lastKey) {
       this.log(`Found :end for simple array value`);
@@ -335,7 +346,6 @@ class Parser {
   }
 
   parse() {
-
     while (this.index < this.tokens.length) {
       var previous = this.tokens[this.index - 1];
       var [peek] = this.peek();
@@ -350,7 +360,6 @@ class Parser {
         this.skipCommand();
         continue;
       }
-
 
       // simple value fields
       if (this.match("TEXT", "COLON", "TEXT")) {
@@ -416,10 +425,12 @@ class Parser {
 
       // accumulate text
       var [peek] = this.peek();
-      this.log(`Accumulating possible text ${peek.value.replace(/\n/g, "\\n")}`);
+      this.log(
+        `Accumulating possible text ${peek.value.replace(/\n/g, "\\n")}`
+      );
       // freeform arrays can accumulate text as an entry
       if (this.top[ARRAY_TYPE] == "freeform" && peek.value.trim()) {
-        this.top.push({ type: "text", value: this.restOfLine().trim() })
+        this.top.push({ type: "text", value: this.restOfLine().trim() });
       } else {
         this.backBuffer.push(peek);
         this.advance();
@@ -427,7 +438,6 @@ class Parser {
     }
     return this.root;
   }
-
 }
 
 module.exports = Parser;
