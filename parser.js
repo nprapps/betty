@@ -7,29 +7,40 @@ var defaultOptions = {
   allowDuplicateKeys: true
 }
 
-const OBJECT = 1;
-const MULTILINE = 2;
-const LIST = 3;
-
 class Parser {
   constructor(tokenList, options = {}) {
     this.tokens = tokenList;
     this.options = Object.assign({}, defaultOptions, options);
     this.index = 0;
-    this.mode = OBJECT;
     this.root = {};
     this.stack = [this.root];
     this.lastKey = null;
     this.backBuffer = [];
   }
 
+  log(...args) {
+    if (!this.options.verbose) return;
+    console.log(args.join(" ").replace(/\n/g, "\\n"));
+  }
+
   get top() {
     return this.stack[this.stack.length - 1];
   }
 
-  log(...args) {
-    if (!this.options.verbose) return;
-    console.log(args.join(" ").replace(/\n/g, "\\n"));
+  push(object) {
+    this.stack.push(object);
+  }
+
+  pop() {
+    var popped = this.stack.pop();
+    if (this.stack.length == 0) this.stack.push(this.root);
+    return this.top;
+  }
+
+  reset(object) {
+    this.log(`Resetting to root scope`);
+    this.stack = [this.root];
+    if (object) this.push(object);
   }
 
   advance(amount = 1) {
@@ -67,13 +78,16 @@ class Parser {
   }
 
   matchValues(...values) {
-    var tokens = this.peek(values.length).map(n => n.value);
-    return values.every((v, i) => v == tokens[i]);
-  }
-
-  matchRegex(...values) {
-    var tokens = this.peek(values.length).map(n => n.value);
-    return values.every((v, i) => tokens[i].match(v));
+    var tokens = this.peek(values.length).filter(Boolean);
+    return values.every(function(v, i) {
+      if (i >= tokens.length) return false;
+      var token = tokens[i].value;
+      if (v instanceof RegExp) {
+        return token.match(v);
+      } else {
+        return token == v;
+      }
+    });
   }
 
   normalizeKeypath(keypath) {
@@ -110,34 +124,42 @@ class Parser {
     return branch;
   }
 
-  push(object) {
-    this.stack.push(object);
-  }
-
-  pop() {
-    var popped = this.stack.pop();
-    if (this.stack.length == 0) this.stack.push(this.root);
-    return this.top;
-  }
-
-  reset(object) {
-    this.log(`Resetting to root scope`);
-    this.stack = [this.root];
-    if (object) this.push(object);
-  }
-
-  addToArray(target, key, value) {
-    if (target.type == "freeform") {
-      key = key.replace(/^[\.+]*/, "");
-      target.push({ type: key, value });
+  appendValue(target, key, value) {
+    if (target instanceof Array) {
+      return this.addToArray(target, key, value);
     } else {
-      // add to the last object in the array
-      var last = target[target.length - 1];
-      if (!last || this.getPath(last, key)) {
-        last = {};
-        target.push(last);
-      }
-      this.setPath(last, key, value);
+      if (typeof value == "string") value = value.trim();
+      this.setPath(target, key, value);
+    }
+  }
+
+  // returns true if the addition was ignored
+  addToArray(target, key, value) {
+    switch (target.type) {
+      case "freeform":
+        key = key.replace(/^[\.+]*/, "");
+        if (typeof value == "string") value = value.trim();
+        target.push({ type: key, value });
+        break;
+
+      case "simple":
+        // simple arrays can't contain keyed values
+        var combined = [key, value].join(":");
+        this.log(`Accumulating line inside of simple list "${combined}"`)
+        this.backBuffer.push({ type: "TEXT", value: combined });
+        return true;
+        break;
+
+      default:
+        if (!target.type) this.setArrayType(target, "standard");
+        // add to the last object in the array
+        var last = target[target.length - 1];
+        if (!last || this.getPath(last, key)) {
+          last = {};
+          target.push(last);
+        }
+        if (typeof value == "string") value = value.trim();
+        this.setPath(last, key, value);
     }
   }
 
@@ -161,7 +183,7 @@ class Parser {
     this.log(`Encountered skip tag`);
     this.advance(2);
     this.remember(-1);
-    while (!this.matchRegex(/^:$/, /^endskip/i) && (this.index < this.tokens.length - 2)) {
+    while (!this.matchValues(":", /^endskip/i) && (this.index < this.tokens.length - 2)) {
       var [skipped] = this.advance();
       this.log(`Skipping text: "${skipped.value}"`)
     }
@@ -182,22 +204,11 @@ class Parser {
     var value = this.restOfLine();
     // assign value
     var target = this.top;
-    if (this.top instanceof Array) {
-      // simple arrays can't contain keyed values
-      if (this.top.type == "simple") {
-        var combined = [key.value, value].join(":");
-        this.log(`Accumulating line inside of simple list "${combined}"`)
-        this.backBuffer.push({ type: "TEXT", value: combined });
-        return;
-      } else {
-        if (!this.top.type) this.setArrayType(this.top, "standard");
-        this.addToArray(this.top, k, value.trim());
-      }
-    } else {
-      this.setPath(this.top, k, value.trim());
+    var wasSimple = this.appendValue(target, k, value);
+    if (!wasSimple) {
+      this.log(`Encountered key value for ${k}`);
+      this.remember(k);
     }
-    this.log(`Encountered key value for ${k}`);
-    this.remember(k);
   }
 
   multilineValue() {
@@ -217,18 +228,8 @@ class Parser {
       words.push(word.value);
     }
     var target = this.top;
-    var value = words.join("").trim();
-    if (this.top instanceof Array) {
-      // simple arrays can't contain keyed values
-      if (this.top.simple) {
-        this.pop();
-        this.setPath(this.top, key, value);
-      } else {
-        this.addToArray(this.top, key, value);
-      }
-    } else {
-      this.setPath(this.top, key, value);
-    }
+    var value = words.join("");
+    this.appendValue(target, key, value);
   }
 
   simpleListValue() {
@@ -269,11 +270,7 @@ class Parser {
     if (typeof object != "object") {
       object = {};
     }
-    if (target instanceof Array) {
-      this.addToArray(target, key, object);
-    } else {
-      this.setPath(target, key, object);
-    }
+    this.appendValue(target, key, object);
     this.push(object);
   }
 
@@ -305,11 +302,7 @@ class Parser {
       this.log(`Setting array as freeform: ${last}`)
       this.setArrayType(array, "freeform");
     }
-    if (target instanceof Array) {
-      this.addToArray(target, key, array);
-    } else {
-      this.setPath(target, key, array);
-    }
+    this.appendValue(target, key, array);
     this.push(array);
   }
 
@@ -326,6 +319,7 @@ class Parser {
     var value = "\n" + this.backBuffer.map(t => t.value).join("");
     var target = this.top;
     var join = (e, v) => (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
+    console.log(this.lastKey);
     if (target instanceof Array && target.type == "simple" && !this.lastKey) {
       this.log(`Found :end for simple array value`);
       var existing = target.pop();
@@ -359,12 +353,12 @@ class Parser {
       var [peek] = this.peek();
 
       // on ignore, quit parsing
-      if (this.matchRegex(/^:$/, /^ignore/i) && this.match("COLON")) {
+      if (this.matchValues(":", /^ignore/i) && this.match("COLON")) {
         break;
       }
 
       // skip takes precedence
-      if (this.matchRegex(/^:$/, /^skip/i) && this.match("COLON")) {
+      if (this.matchValues(":", /^skip/i) && this.match("COLON")) {
         this.skipCommand();
         continue;
       }
@@ -373,7 +367,7 @@ class Parser {
       // simple value fields
       if (this.match("TEXT", "COLON", "TEXT")) {
         // make sure it's not an empty text key
-        if (peek && peek.value.trim() && (!previous || previous.type != "BACKSLASH")) {
+        if (peek && peek.value.trim()) {
           this.singleValue();
           continue;
         }
@@ -381,7 +375,7 @@ class Parser {
 
       // multiline field
       if (this.match("TEXT", "COLON", "COLON", "TEXT")) {
-        if (peek && peek.value.trim() && (!previous || previous.type != "BACKSLASH")) {
+        if (peek && peek.value.trim()) {
           this.multilineValue();
           continue;
         }
@@ -416,7 +410,7 @@ class Parser {
       }
 
       // in case of :end
-      if (this.matchRegex(/^:$/, /^end(?!skip)/i) && this.match("COLON")) {
+      if (this.matchValues(":", /^end(?!skip)/i) && this.match("COLON")) {
         this.flushBuffer();
         this.restOfLine();
         continue;
@@ -426,7 +420,7 @@ class Parser {
       if (this.match("BACKSLASH")) {
         var [here, next, after] = this.peek(3);
         this.log(`Escaping character ${next.value}`);
-        next.type = "TEXT";
+        next.type = "ESCAPED";
         this.backBuffer.push(here);
         this.advance();
         continue;
