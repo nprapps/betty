@@ -1,5 +1,13 @@
 var identity = c => c;
 
+var ARRAY_TYPE = Symbol();
+
+var setArrayType = (array, value) => Object.defineProperty(array, ARRAY_TYPE, {
+  value,
+  enumerable: false,
+  configurable: true
+});
+
 var defaultOptions = {
   verbose: false,
   onFieldName: identity,
@@ -49,22 +57,18 @@ class Parser {
     return sliced;
   }
 
-  advanceThroughValue(v) {
+  restOfLine() {
     var acc = [];
     var [next] = this.peek();
-    while (next && next.value != v) {
+    while (next && next.value != "\n") {
       acc.push(next);
       this.advance();
       [next] = this.peek();
     }
-    // absorb the value we found
+    // absorb the newline we found
     var [found] = this.advance();
     if (found) acc.push(found);
-    return acc;
-  }
-
-  restOfLine() {
-    return this.advanceThroughValue("\n").map(t => t.value).join("");
+    return acc.map(t => t.value).join("");
   }
 
   peek(amount = 1) {
@@ -135,7 +139,7 @@ class Parser {
 
   // returns true if the addition was ignored
   addToArray(target, key, value) {
-    switch (target.type) {
+    switch (target[ARRAY_TYPE]) {
       case "freeform":
         key = key.replace(/^[\.+]*/, "");
         if (typeof value == "string") value = value.trim();
@@ -145,13 +149,13 @@ class Parser {
       case "simple":
         // simple arrays can't contain keyed values
         var combined = [key, value].join(":");
-        this.log(`Accumulating line inside of simple list "${combined}"`)
+        this.log(`Accumulating line inside of simple list "${combined}"`);
         this.backBuffer.push({ type: "TEXT", value: combined });
         return true;
         break;
 
       default:
-        if (!target.type) this.setArrayType(target, "standard");
+        if (!target[ARRAY_TYPE]) setArrayType(target, "standard");
         // add to the last object in the array
         var last = target[target.length - 1];
         if (!last || this.getPath(last, key)) {
@@ -163,16 +167,8 @@ class Parser {
     }
   }
 
-  setArrayType(array, value) {
-    Object.defineProperty(array, "type", { value, enumerable: false, configurable: true });
-  }
-
-  isRelative(key) {
-    return key[0] == ".";
-  }
-
   getTarget(key) {
-    if (this.isRelative(key)) {
+    if (key[0] == ".") {
       return this.top;
     }
     this.reset();
@@ -236,12 +232,12 @@ class Parser {
     // pass the star
     var [star] = this.advance();
     var value = this.restOfLine();
-    if (this.top instanceof Array && !this.top.type || this.top.type == "simple") {
+    if (this.top instanceof Array && (!this.top[ARRAY_TYPE] || this.top[ARRAY_TYPE] == "simple")) {
       this.log(`Assigning simple list value ${value.trim()}`);
       this.remember(null);
       this.top.push(value.trim());
-      this.setArrayType(this.top, "simple");
-    } else if (this.top.type == "freeform") {
+      setArrayType(this.top, "simple");
+    } else if (this.top[ARRAY_TYPE] == "freeform") {
       // add this as a freeform value
       this.addToArray(this.top, "text", star.value + value.replace(/\n/, ""));
     } else {
@@ -261,11 +257,7 @@ class Parser {
     this.remember(null);
     this.log(`Opening object at "${key}"`);
     // by default, creates a new object at the root
-    var target = this.top;
-    if (!this.isRelative(key)) {
-      this.reset();
-      target = this.root;
-    }
+    var target = this.getTarget(key);
     var object = this.getPath(target, key);
     if (typeof object != "object") {
       object = {};
@@ -291,16 +283,12 @@ class Parser {
       return;
     }
     this.log(`Creating array at ${key}`);
-    var target = this.top;
-    if (!this.isRelative(key)) {
-      target = this.root;
-      this.reset();
-    }
+    var target = this.getTarget(key);
     var array = [];
     var last = this.normalizeKeypath(key).pop();
     if (last[0] == "+") {
       this.log(`Setting array as freeform: ${last}`)
-      this.setArrayType(array, "freeform");
+      setArrayType(array, "freeform");
     }
     this.appendValue(target, key, array);
     this.push(array);
@@ -320,7 +308,7 @@ class Parser {
     var target = this.top;
     var join = (e, v) => (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
     console.log(this.lastKey);
-    if (target instanceof Array && target.type == "simple" && !this.lastKey) {
+    if (target[ARRAY_TYPE] == "simple" && !this.lastKey) {
       this.log(`Found :end for simple array value`);
       var existing = target.pop();
       var updated = join(existing, value);
@@ -430,16 +418,12 @@ class Parser {
       var [peek] = this.peek();
       this.log(`Accumulating possible text ${peek.value.replace(/\n/g, "\\n")}`);
       // freeform arrays can accumulate text as an entry
-      if (this.top.type == "freeform" && peek.value.trim()) {
+      if (this.top[ARRAY_TYPE] == "freeform" && peek.value.trim()) {
         this.top.push({ type: "text", value: this.restOfLine().trim() })
       } else {
         this.backBuffer.push(peek);
         this.advance();
       }
-
-      // throw away unmatched value
-      // var [unmatched] = this.advance();
-      // this.log(`Unmatched value ${unmatched.type} | ${unmatched.value}`);
     }
     return this.root;
   }
