@@ -2,7 +2,7 @@ var identity = c => c;
 
 var ARRAY_TYPE = Symbol();
 
-var setArrayType = (array, value) =>
+var assignType = (array, value) =>
   Object.defineProperty(array, ARRAY_TYPE, {
     value,
     enumerable: false,
@@ -27,10 +27,77 @@ class Parser {
     this.backBuffer = [];
   }
 
+  /*
+  parse() processes a stream of tokens and calls methods based on pattern-matching
+  */
+
+  parse() {
+    while (this.index < this.tokens.length) {
+
+      // on ignore, quit parsing
+      if (this.matchValues(":", /^ignore/i) && this.matchTypes("COLON")) {
+        return this.root;
+      }
+
+      // skip takes precedence
+      if (this.matchValues(":", /^skip/i) && this.matchTypes("COLON")) {
+        this.skipCommand();
+        continue;
+      }
+
+      // type-defined grammar
+      var typeMatched = [
+        [this.singleValue, "TEXT", "COLON", "TEXT"],
+        [this.multilineValue, "TEXT", "COLON", "COLON", "TEXT"],
+        [this.simpleListValue, "STAR", "TEXT"],
+        [this.objectOpen, "LEFT_BRACE", "TEXT", "RIGHT_BRACE"],
+        [this.objectClose, "LEFT_BRACE", "RIGHT_BRACE"],
+        [this.arrayOpen, "LEFT_BRACKET", "TEXT", "RIGHT_BRACKET"],
+        [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"],
+        [this.escape, "BACKSLASH"]
+      ]
+
+      var handled = typeMatched.some(([fn, ...types]) => {
+        if (this.matchTypes(...types)) {
+          // these can return true if they couldn't match
+          var error = fn.call(this);
+          return !error && true;
+        }
+      });
+      if (handled) continue;
+
+      // in case of :end
+      if (this.matchValues(":", /^end(?!skip)/i) && this.matchTypes("COLON")) {
+        this.flushBuffer();
+        this.restOfLine();
+        continue;
+      }
+
+      // accumulate text
+
+      var [p] = this.peek();
+      this.log(
+        `Accumulating possible text ${p.value.replace(/\n/g, "\\n")}`
+      );
+      // freeform arrays can accumulate text as an entry
+      if (this.top[ARRAY_TYPE] == "freeform" && p.value.trim()) {
+        this.top.push({ type: "text", value: this.restOfLine().trim() });
+      } else {
+        this.backBuffer.push(p);
+        this.advance();
+      }
+    }
+    return this.root;
+  }
+
   log(...args) {
     if (!this.options.verbose) return;
     console.log(args.join(" ").replace(/\n/g, "\\n"));
   }
+
+  /*
+  methods for working with the context stack
+  */
 
   get top() {
     return this.stack[this.stack.length - 1];
@@ -51,6 +118,18 @@ class Parser {
     this.stack = [this.root];
     if (object) this.push(object);
   }
+
+  getTarget(key) {
+    if (key[0] == ".") {
+      return this.top;
+    }
+    this.reset();
+    return this.root;
+  }
+
+  /*
+  methods for checking and consuming tokens
+  */
 
   advance(amount = 1) {
     var sliced = this.tokens.slice(this.index, this.index + amount);
@@ -77,7 +156,7 @@ class Parser {
     return sliced;
   }
 
-  match(...types) {
+  matchTypes(...types) {
     var tokens = this.peek(types.length).map(n => n.type);
     return types.every((t, i) => t == tokens[i]);
   }
@@ -94,6 +173,10 @@ class Parser {
       }
     });
   }
+
+  /*
+  methods for working with object keypaths
+  */
 
   normalizeKeypath(keypath) {
     if (typeof keypath == "string") keypath = keypath.split(".");
@@ -112,7 +195,7 @@ class Parser {
       }
       branch = branch[k];
     }
-    return branch[terminal];
+    return branch && branch[terminal];
   }
 
   setPath(object, keypath, value) {
@@ -129,17 +212,29 @@ class Parser {
     return branch;
   }
 
+  remember(key, remainder = "\n") {
+    this.log(`Remembering key ${key}`);
+    this.lastKey = key;
+    this.backBuffer = [{ type: "text", value: remainder }];
+  }
+
+  /*
+  methods for adding values to the output object
+  */
+
   appendValue(target, key, value) {
     if (target instanceof Array) {
       return this.addToArray(target, key, value);
     } else {
       if (typeof value == "string") value = value.trim();
       this.setPath(target, key, value);
+      this.remember(key);
     }
   }
 
   // returns true if the addition was ignored
   addToArray(target, key, value) {
+    this.remember(key);
     switch (target[ARRAY_TYPE]) {
       case "freeform":
         key = key.replace(/^[\.+]*/, "");
@@ -151,12 +246,12 @@ class Parser {
         // simple arrays can't contain keyed values
         var combined = [key, value].join(":");
         this.log(`Accumulating line inside of simple list "${combined}"`);
+        this.remember(null);
         this.backBuffer.push({ type: "TEXT", value: combined });
-        return true;
         break;
 
       default:
-        if (!target[ARRAY_TYPE]) setArrayType(target, "standard");
+        if (!target[ARRAY_TYPE]) assignType(target, "standard");
         // add to the last object in the array
         var last = target[target.length - 1];
         if (!last || this.getPath(last, key)) {
@@ -168,13 +263,9 @@ class Parser {
     }
   }
 
-  getTarget(key) {
-    if (key[0] == ".") {
-      return this.top;
-    }
-    this.reset();
-    return this.root;
-  }
+  /*
+  methods for parsing sets of tokens
+  */
 
   skipCommand() {
     this.log(`Encountered skip tag`);
@@ -190,30 +281,37 @@ class Parser {
     this.restOfLine();
   }
 
+  escape() {
+    var [here, next, after] = this.peek(3);
+    this.log(`Escaping character ${next.value}`);
+    next.type = "ESCAPED";
+    this.backBuffer.push(here);
+    this.advance();
+  }
+
   singleValue() {
     // get key and colon
     var [key] = this.peek();
     var k = key.value.trim();
     // check for valid keys
-    if (k.match(/[\s]/)) {
+    if (!k.length || k.match(/[\s]/)) {
       this.log(`Invalid key found: ${k}`);
-      return this.backBuffer.push(this.restOfLine());
+      // return this.backBuffer.push(this.restOfLine());
+      return true;
     }
     this.advance(2);
     // get values up through the line break
     var value = this.restOfLine();
     // assign value
     var target = this.top;
-    var wasSimple = this.appendValue(target, k, value);
-    if (!wasSimple) {
-      this.log(`Encountered key value for ${k}`);
-      this.remember(k);
-    }
+    this.log(`Encountered key/value pair for ${k}`)
+    this.appendValue(target, k, value);
   }
 
   multilineValue() {
     this.remember(null);
     var [key] = this.advance(3).map(t => t.value.trim());
+    if (!key) return true;
     this.log(`Opening multiline value at ${key}`);
     var words = [this.advance().value];
     while (this.index < this.tokens.length) {
@@ -221,7 +319,7 @@ class Parser {
       var third = this.peek(3)[2];
       third = third ? third.value.trim() : "";
       if (
-        this.match("COLON", "COLON") &&
+        this.matchTypes("COLON", "COLON") &&
         third.toLowerCase() == key.toLowerCase()
       ) {
         this.advance(3);
@@ -246,7 +344,7 @@ class Parser {
       this.log(`Assigning simple list value ${value.trim()}`);
       this.remember(null);
       this.top.push(value.trim());
-      setArrayType(this.top, "simple");
+      assignType(this.top, "simple");
     } else if (this.top[ARRAY_TYPE] == "freeform") {
       // add this as a freeform value
       this.addToArray(this.top, "text", star.value + value.replace(/\n/, ""));
@@ -264,7 +362,6 @@ class Parser {
       this.index -= 2;
       return this.objectClose();
     }
-    this.remember(null);
     this.log(`Opening object at "${key}"`);
     // by default, creates a new object at the root
     var target = this.getTarget(key);
@@ -274,6 +371,7 @@ class Parser {
     }
     this.appendValue(target, key, object);
     this.push(object);
+    this.remember(null);
   }
 
   objectClose() {
@@ -298,7 +396,7 @@ class Parser {
     var last = this.normalizeKeypath(key).pop();
     if (last[0] == "+") {
       this.log(`Setting array as freeform: ${last}`);
-      setArrayType(array, "freeform");
+      assignType(array, "freeform");
     }
     this.appendValue(target, key, array);
     this.push(array);
@@ -313,11 +411,12 @@ class Parser {
   }
 
   flushBuffer() {
+    this.log(`Clearing buffer of ${this.backBuffer.length} items`);
     // assign to the last key and clear buffer
-    var value = "\n" + this.backBuffer.map(t => t.value).join("");
+    var value = this.backBuffer.map(t => t.value).join("");
     var target = this.top;
     var join = (e, v) =>
-      (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
+      (e + v).trim().replace(/^\\/m, "");
     if (target[ARRAY_TYPE] == "simple" && !this.lastKey) {
       this.log(`Found :end for simple array value`);
       var existing = target.pop();
@@ -329,114 +428,18 @@ class Parser {
         if (target instanceof Array) {
           target = target[target.length - 1];
         }
-        var existing = this.getPath(target, this.lastKey);
-        var updated = join(existing, value);
-        this.setPath(target, this.lastKey, updated);
+        // handle empty arrays
+        if (target) {
+          var existing = this.getPath(target, this.lastKey);
+          var updated = join(existing, value);
+          this.setPath(target, this.lastKey, updated);
+        }
       }
     }
     this.remember(null);
     this.advance(2);
   }
 
-  remember(key) {
-    this.log(`Remembering key ${key}`);
-    this.lastKey = key;
-    this.backBuffer = [];
-  }
-
-  parse() {
-    while (this.index < this.tokens.length) {
-      var previous = this.tokens[this.index - 1];
-      var [peek] = this.peek();
-
-      // on ignore, quit parsing
-      if (this.matchValues(":", /^ignore/i) && this.match("COLON")) {
-        break;
-      }
-
-      // skip takes precedence
-      if (this.matchValues(":", /^skip/i) && this.match("COLON")) {
-        this.skipCommand();
-        continue;
-      }
-
-      // simple value fields
-      if (this.match("TEXT", "COLON", "TEXT")) {
-        // make sure it's not an empty text key
-        if (peek && peek.value.trim()) {
-          this.singleValue();
-          continue;
-        }
-      }
-
-      // multiline field
-      if (this.match("TEXT", "COLON", "COLON", "TEXT")) {
-        if (peek && peek.value.trim()) {
-          this.multilineValue();
-          continue;
-        }
-      }
-
-      // string list item
-      if (this.match("STAR", "TEXT")) {
-        this.simpleListValue();
-        continue;
-      }
-
-      // entering an object
-      if (this.match("LEFT_BRACE", "TEXT", "RIGHT_BRACE")) {
-        this.objectOpen();
-        continue;
-      }
-
-      if (this.match("LEFT_BRACE", "RIGHT_BRACE")) {
-        this.objectClose();
-        continue;
-      }
-
-      // arrays
-      if (this.match("LEFT_BRACKET", "TEXT", "RIGHT_BRACKET")) {
-        this.arrayOpen();
-        continue;
-      }
-
-      if (this.match("LEFT_BRACKET", "RIGHT_BRACKET")) {
-        this.arrayClose();
-        continue;
-      }
-
-      // in case of :end
-      if (this.matchValues(":", /^end(?!skip)/i) && this.match("COLON")) {
-        this.flushBuffer();
-        this.restOfLine();
-        continue;
-      }
-
-      // handle escaping backslashes
-      if (this.match("BACKSLASH")) {
-        var [here, next, after] = this.peek(3);
-        this.log(`Escaping character ${next.value}`);
-        next.type = "ESCAPED";
-        this.backBuffer.push(here);
-        this.advance();
-        continue;
-      }
-
-      // accumulate text
-      var [peek] = this.peek();
-      this.log(
-        `Accumulating possible text ${peek.value.replace(/\n/g, "\\n")}`
-      );
-      // freeform arrays can accumulate text as an entry
-      if (this.top[ARRAY_TYPE] == "freeform" && peek.value.trim()) {
-        this.top.push({ type: "text", value: this.restOfLine().trim() });
-      } else {
-        this.backBuffer.push(peek);
-        this.advance();
-      }
-    }
-    return this.root;
-  }
 }
 
 module.exports = Parser;
