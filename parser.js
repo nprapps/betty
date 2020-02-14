@@ -318,7 +318,6 @@ class Parser {
     var target = this.top;
     var join = (e, v) =>
       (e + "\n" + v.replace(/^\n/, "")).trim().replace(/^\\/m, "");
-    console.log(this.lastKey);
     if (target[ARRAY_TYPE] == "simple" && !this.lastKey) {
       this.log(`Found :end for simple array value`);
       var existing = target.pop();
