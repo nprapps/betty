@@ -150,7 +150,7 @@ class Parser {
     var [key] = this.peek();
     var k = key.value.trim();
     // check for valid keys
-    if (!k.length || k.match(/[\s]/)) {
+    if (!k.length || k.match(/[\s\?\/="']/)) {
       return true;
     }
     this.advance(2);
