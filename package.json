@@ -1,6 +1,6 @@
 {
   "name": "@nprapps/betty",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "A more exacting ArchieML parser",
   "main": "index.js",
   "scripts": {

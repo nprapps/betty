@@ -13,11 +13,11 @@ var defaultOptions = {
 var facade = {
   parse: function(text, settings) {
     var options = Object.assign({}, defaultOptions, settings);
-
+    text = text.replace(/\r/g, "");
     var tokens = tokenize(text);
     // console.log(tokens);
-    var parser = new Parser(tokens, options);
-    var instructions = parser.parse();
+    var parser = new Parser(options);
+    var instructions = parser.parse(tokens);
     var assembler = new Assembler(options);
     var output = assembler.assemble(instructions);
     // console.log(output);

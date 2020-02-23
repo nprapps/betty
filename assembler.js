@@ -93,16 +93,7 @@ class Assembler {
       this.log("Raw instructions stream");
       instructions.forEach(i => console.log(i));
     }
-
-    // non-buffer instructions must be preceded with whitespace or a newline
-    instructions.forEach(function(instruction, i) {
-      var previous = instructions[i - 1];
-      if (!previous || !previous.value || !previous.value.trim()) return;
-      if (instruction.type == "flush") return;
-      // effectively no-op that instruction
-      instruction.type = "buffer";
-    });
-
+    
     // pre-process to combine buffered values
     var processed = [];
     var interrupts = new Set(["skipped"]);

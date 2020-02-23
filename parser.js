@@ -1,19 +1,42 @@
 var identity = c => c;
 
+var realign = function*(stream) {
+  var line = [];
+  for (var i = 0; i < stream.length; i++) {
+    var token = stream[i];
+    line.push(token);
+    if (token.value == "\n") {
+      yield line;
+      line = [];
+    }
+  }
+  yield line;
+};
+
+var combine = array => array.map(t => t.value).join("");
+
+var trimStart = function(tokens) {
+  var line = tokens.slice();
+  while (line.length && line[0].value.trim() == "") line.shift();
+  return line;
+};
+
 class Parser {
-  constructor(tokenList, options = {}) {
-    this.tokens = tokenList;
+  constructor(options = {}) {
     this.options = options;
     this.index = 0;
     this.instructions = [];
+    this.lines = [];
   }
 
   /*
   parse() processes a stream of tokens and calls methods based on pattern-matching
   */
 
-  parse() {
-    while (this.index < this.tokens.length) {
+  parse(tokens) {
+    this.lines = [...realign(tokens)];
+    while (this.index < this.lines.length) {
+
       // on ignore, quit parsing
       if (this.matchValues(":", /^ignore/i) && this.matchTypes("COLON")) {
         return this.instructions;
@@ -33,12 +56,8 @@ class Parser {
         [this.objectOpen, "LEFT_BRACE", "TEXT", "RIGHT_BRACE"],
         [this.objectClose, "LEFT_BRACE", "RIGHT_BRACE"],
         [this.arrayOpen, "LEFT_BRACKET", "TEXT", "RIGHT_BRACKET"],
-        [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"],
-        [this.escape, "BACKSLASH"]
+        [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"]
       ];
-
-      // these must be preceded by a newline
-      var [ glance ] = this.peek(1, -1);
 
       var handled = typeMatched.some(([fn, ...types]) => {
         if (this.matchTypes(...types)) {
@@ -52,7 +71,6 @@ class Parser {
       // in case of :end
       if (this.matchValues(":", /^end(?!skip)/i) && this.matchTypes("COLON")) {
         this.flushBuffer();
-        this.restOfLine();
         continue;
       }
 
@@ -81,38 +99,26 @@ class Parser {
   methods for checking and consuming tokens
   */
 
-  advance(amount = 1) {
-    var sliced = this.tokens.slice(this.index, this.index + amount);
-    this.index += amount;
-    return sliced;
+  advance() {
+    var line = this.lines[this.index];
+    this.index++;
+    return line;
   }
 
-  restOfLine() {
-    var acc = [];
-    var [next] = this.peek();
-    while (next && next.value != "\n") {
-      acc.push(next);
-      this.advance();
-      [next] = this.peek();
-    }
-    return acc.map(t => t.value).join("");
-  }
-
-  peek(amount = 1, offset = 0) {
-    var sliced = this.tokens.slice(this.index + offset, this.index + offset + amount);
-    return sliced;
+  peek(offset = 0) {
+    return this.lines[this.index + offset];
   }
 
   matchTypes(...types) {
-    var tokens = this.peek(types.length).map(n => n.type);
-    return types.every((t, i) => t == tokens[i]);
+    var line = trimStart(this.peek());
+    return types.every((t, i) => line[i] && t == line[i].type);
   }
 
   matchValues(...values) {
-    var tokens = this.peek(values.length).filter(Boolean);
+    var line = trimStart(this.peek());
     return values.every(function(v, i) {
-      if (i >= tokens.length) return false;
-      var token = tokens[i].value;
+      if (i >= line.length) return false;
+      var token = line[i].value;
       if (v instanceof RegExp) {
         return token.match(v);
       } else {
@@ -127,113 +133,101 @@ class Parser {
 
   skipCommand() {
     this.log(`Encountered skip tag`);
-    this.advance(2);
     while (
-      !this.matchValues(":", /^endskip/i) &&
-      this.index < this.tokens.length - 2
+      this.index < this.lines.length &&
+      !this.matchValues(":", /^endskip/i)
     ) {
-      var [skipped] = this.advance();
-      this.log(` > Skipping text: "${skipped.value}"`);
+      var skipped = this.advance();
+      this.log(` > Skipping text: "${combine(skipped)}"`);
     }
     this.addInstruction("skipped");
-    this.restOfLine();
-  }
-
-  escape() {
-    var [here, next, after] = this.peek(3);
-    next.type = "ESCAPED";
-    this.buffer();
   }
 
   singleValue() {
     // get key and colon
-    var [key] = this.peek();
+    var [key, _, ...values] = trimStart(this.peek());
     var k = key.value.trim();
     // check for valid keys
     if (!k.length || k.match(/[\s\?\/="']/)) {
       return true;
     }
-    // make sure the previous item was a linebreak
-    var [glance] = this.peek(1, -1);
-    if (glance && glance.value != "\n") {
-      return true;
-    }
-    this.advance(2);
-    // get values up through the line break
-    var value = this.restOfLine();
+    var value = combine(values);
     // assign value
     this.addInstruction("value", k, value);
+    this.advance();
   }
 
   multilineValue() {
-    var [key] = this.advance(3).map(t => t.value.trim());
-    if (!key) return true;
-    var words = [this.advance().value];
-    while (this.index < this.tokens.length) {
-      // advance until we see the ending tag
-      var third = this.peek(3)[2];
-      third = third ? third.value.trim() : "";
+    var [key, c1, c2, ...values] = trimStart(this.peek());
+    var k = key.value.trim();
+    // check for valid keys
+    if (!k.length || k.match(/[\s\?\/="']/)) {
+      return true;
+    }
+    this.advance();
+    var next;
+    var ender = k.toLowerCase();
+    while (next = this.peek()) {
+      var third = next[2] ? next[2].value : "";
       if (
         this.matchTypes("COLON", "COLON") &&
-        third.toLowerCase() == key.toLowerCase()
+        third.trim().toLowerCase() == ender
       ) {
-        this.advance(3);
         break;
       }
-      var [word] = this.advance();
-      words.push(word.value);
+      values.push(...next);
+      this.advance();
     }
-    var value = words.join("");
-    this.addInstruction("value", key, value);
+    var value = combine(values);
+    this.addInstruction("value", k, value);
+    this.advance();
   }
 
   simpleListValue() {
     // pass the star
-    var [star] = this.advance();
-    var value = this.restOfLine();
-    this.addInstruction("simple", star.value, value);
+    var [star, ...values] = trimStart(this.advance());
+    this.addInstruction("simple", star.value, combine(values));
   }
 
   objectOpen() {
-    var [_, key] = this.advance(3).map(t => t.value.trim());
-    if (!key) {
-      this.index -= 2;
+    var [_, key] = trimStart(this.peek());
+    var k = key.value.trim();
+    if (!k) {
       return this.objectClose();
     }
     // by default, creates a new object at the root
-    this.addInstruction("object", key);
+    this.addInstruction("object", k);
+    this.advance();
   }
 
   objectClose() {
     this.addInstruction("closeObject");
-    this.advance(2);
+    this.advance();
   }
 
   arrayOpen() {
-    var [_, key] = this.advance(3).map(t => t.value);
-    key = key.trim();
-    if (!key) {
-      // close the array instead
-      this.advance(-2);
-      this.arrayClose();
-      return;
+    var [_, key] = trimStart(this.peek());
+    var k = key.value.trim();
+    if (!k) {
+      return this.arrayClose();
     }
-    this.addInstruction("array", key);
+    this.addInstruction("array", k);
+    this.advance();
   }
 
   arrayClose() {
     this.addInstruction("closeArray");
-    this.advance(2);
+    this.advance();
   }
 
   buffer() {
-    var [token] = this.advance();
-    this.addInstruction("buffer", null, token.value);
+    var values = this.advance();
+    this.addInstruction("buffer", null, combine(values));
   }
 
   flushBuffer() {
     this.addInstruction("flush");
-    this.advance(2);
+    this.advance();
   }
 }
 
