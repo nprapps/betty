@@ -37,6 +37,9 @@ class Parser {
         [this.escape, "BACKSLASH"]
       ];
 
+      // these must be preceded by a newline
+      var [ glance ] = this.peek(1, -1);
+
       var handled = typeMatched.some(([fn, ...types]) => {
         if (this.matchTypes(...types)) {
           // these can return true if they couldn't match
@@ -92,14 +95,11 @@ class Parser {
       this.advance();
       [next] = this.peek();
     }
-    // absorb the newline we found
-    var [found] = this.advance();
-    if (found) acc.push(found);
     return acc.map(t => t.value).join("");
   }
 
-  peek(amount = 1) {
-    var sliced = this.tokens.slice(this.index, this.index + amount);
+  peek(amount = 1, offset = 0) {
+    var sliced = this.tokens.slice(this.index + offset, this.index + offset + amount);
     return sliced;
   }
 
@@ -151,6 +151,11 @@ class Parser {
     var k = key.value.trim();
     // check for valid keys
     if (!k.length || k.match(/[\s\?\/="']/)) {
+      return true;
+    }
+    // make sure the previous item was a linebreak
+    var [glance] = this.peek(1, -1);
+    if (glance && glance.value != "\n") {
       return true;
     }
     this.advance(2);

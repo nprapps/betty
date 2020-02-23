@@ -22,6 +22,9 @@ this is a standard multiline value
 
 :end
 
+ignored [ test ] line
+another ignored:line value
+
 {.child}
 block: true
 {}
