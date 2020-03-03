@@ -168,7 +168,8 @@ class Parser {
     var next;
     var ender = k.toLowerCase();
     while (next = this.peek()) {
-      var third = next[2] ? next[2].value : "";
+      var trimmed = trimStart(next);
+      var third = trimmed[2] ? trimmed[2].value : "";
       if (
         this.matchTypes("COLON", "COLON") &&
         third.trim().toLowerCase() == ender
