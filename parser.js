@@ -168,12 +168,7 @@ class Parser {
     var next;
     var ender = k.toLowerCase();
     while (next = this.peek()) {
-      var trimmed = trimStart(next);
-      var third = trimmed[2] ? trimmed[2].value : "";
-      if (
-        this.matchTypes("COLON", "COLON") &&
-        third.trim().toLowerCase() == ender
-      ) {
+      if (this.matchValues(":", ":", new RegExp(ender, "i"))) {
         break;
       }
       values.push(...next);
