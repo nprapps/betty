@@ -1,5 +1,7 @@
 var identity = c => c;
 
+// take a single stream of tokens and reorganizes it back into lines
+// since this is a generator, you can for...of or spread it
 var realign = function*(stream) {
   var line = [];
   for (var i = 0; i < stream.length; i++) {
@@ -15,6 +17,7 @@ var realign = function*(stream) {
 
 var combine = array => array.map(t => t.value).join("");
 
+// removes whitespace tokens from the start of a line
 var trimStart = function(tokens) {
   var line = tokens.slice();
   while (line.length && line[0].value.trim() == "") line.shift();
@@ -31,9 +34,12 @@ class Parser {
 
   /*
   parse() processes a stream of tokens and calls methods based on pattern-matching
+  The result is a list of instructions that are used to assemble the final data object.
   */
 
   parse(tokens) {
+    this.index = 0;
+    this.instructions = [];
     this.lines = [...realign(tokens)];
     while (this.index < this.lines.length) {
 
@@ -49,6 +55,7 @@ class Parser {
       }
 
       // type-defined grammar
+      // specifies a parsing function, followed by its token pattern
       var typeMatched = [
         [this.singleValue, "TEXT", "COLON", "TEXT"],
         [this.multilineValue, "TEXT", "COLON", "COLON", "TEXT"],
@@ -59,9 +66,10 @@ class Parser {
         [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"]
       ];
 
+      // find a matching pattern and call it
       var handled = typeMatched.some(([fn, ...types]) => {
         if (this.matchTypes(...types)) {
-          // these can return true if they couldn't match
+          // parse functions can return true to reject the match
           var error = fn.call(this);
           return !error && true;
         }
@@ -99,21 +107,27 @@ class Parser {
   methods for checking and consuming tokens
   */
 
+  // move to the next line
   advance() {
     var line = this.lines[this.index];
     this.index++;
     return line;
   }
 
+  // look ahead by offset lines
   peek(offset = 0) {
     return this.lines[this.index + offset];
   }
 
+  // match against token types
   matchTypes(...types) {
     var line = trimStart(this.peek());
     return types.every((t, i) => line[i] && t == line[i].type);
   }
 
+  // match against values
+  // this is useful for things like multiline values,
+  // where the end tag varies based on the opening key
   matchValues(...values) {
     var line = trimStart(this.peek());
     return values.every(function(v, i) {
@@ -128,9 +142,12 @@ class Parser {
   }
 
   /*
-  methods for parsing sets of tokens
+  Methods for parsing sets of tokens
+  Each method examines the current line, and adds the corresponding
+  instructions to be used by the assembler in the next step
   */
 
+  // skip: through :endskip
   skipCommand() {
     this.log(`Encountered skip tag`);
     while (
@@ -143,6 +160,7 @@ class Parser {
     this.addInstruction("skipped");
   }
 
+  // key: value
   singleValue() {
     // get key and colon
     var [key, _, ...values] = trimStart(this.peek());
@@ -157,6 +175,7 @@ class Parser {
     this.advance();
   }
 
+  // key:: multiple lines of value ::key
   multilineValue() {
     var [key, c1, c2, ...values] = trimStart(this.peek());
     var k = key.value.trim();
@@ -179,15 +198,19 @@ class Parser {
     this.advance();
   }
 
+  // * item
   simpleListValue() {
     // pass the star
     var [star, ...values] = trimStart(this.advance());
     this.addInstruction("simple", star.value, combine(values));
   }
 
+  // {objectKey}
   objectOpen() {
+    // ignore the bracket, get the key name
     var [_, key] = trimStart(this.peek());
     var k = key.value.trim();
+    // handle {}, which closes an object
     if (!k) {
       return this.objectClose();
     }
@@ -201,6 +224,7 @@ class Parser {
     this.advance();
   }
 
+  // [arrayKey]
   arrayOpen() {
     var [_, key] = trimStart(this.peek());
     var k = key.value.trim();
@@ -216,11 +240,13 @@ class Parser {
     this.advance();
   }
 
+  // text is added to a generic buffer, since its use depends on the previous instructions
   buffer() {
     var values = this.advance();
     this.addInstruction("buffer", null, combine(values));
   }
 
+  // signals that text has finished and should be merged
   flushBuffer() {
     this.addInstruction("flush");
     this.advance();

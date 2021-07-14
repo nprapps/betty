@@ -1,3 +1,5 @@
+// [TYPE] is used to set metadata on array types
+// this lets us use regular JS arrays, but tag them as "freeform" or whatever
 var TYPE = Symbol();
 
 var assignType = (a, value) =>
@@ -7,6 +9,11 @@ var assignType = (a, value) =>
     configurable: false
   });
 
+/*
+The assembler takes a series of instructions from the parser and uses those to build
+an output object. For example, it might use "objectOpen: nested" and "singleValue: key,value"
+instructions to output { nested: { key: "value" }}
+*/
 class Assembler {
   constructor(options) {
     this.options = options;
@@ -26,6 +33,9 @@ class Assembler {
     );
   }
 
+  // stack manipulation methods
+  // the assembler maintains a context stack of references for "where" it is
+  // in the output object tree - e.g., in a nested object inside an array
   get top() {
     return this.stack[this.stack.length - 1];
   }
@@ -40,6 +50,7 @@ class Assembler {
     return scope;
   }
 
+  // given a key, sets the place in the object where the key should be placed
   getTarget(key) {
     if (key[0] == ".") {
       return this.top;
@@ -48,11 +59,13 @@ class Assembler {
     return this.root;
   }
 
+  // on many new keys (outside of lists), jump back to the object root
   reset(scope) {
     this.stack = [this.root];
     if (scope) this.stack.push(scope);
   }
 
+  // turn deep keypaths ("nested.key.string") into a path array
   normalizeKeypath(keypath) {
     if (typeof keypath == "string") keypath = keypath.split(".");
     keypath = keypath.filter(Boolean);
@@ -60,6 +73,8 @@ class Assembler {
     return keypath;
   }
 
+  // given a keypath, traverse to that location in the output object
+  // returns undefined if any step along the keypath fails to exist
   getPath(object, keypath) {
     keypath = this.normalizeKeypath(keypath);
     var terminal = keypath.pop();
@@ -73,6 +88,8 @@ class Assembler {
     return branch && branch[terminal];
   }
 
+  // given a keypath, set the value at that final location
+  // creates objects along the way for missing keypath segments
   setPath(object, keypath, value) {
     keypath = this.normalizeKeypath(keypath);
     var terminal = keypath.pop().replace(/\+/g, "");
@@ -88,13 +105,15 @@ class Assembler {
     return branch;
   }
 
+  // following the instructions, assemble the final object
   assemble(instructions) {
     if (this.options.verbose) {
       this.log("Raw instructions stream");
       instructions.forEach(i => console.log(i));
     }
     
-    // pre-process to combine buffered values
+    // pre-process to combine sequential buffered values into a single instruction
+    // this initial pass makes it easier to handle blocks of arbitrary text
     var processed = [];
     var interrupts = new Set(["skipped"]);
     var lastValue = null;
@@ -190,14 +209,17 @@ class Assembler {
       processed.forEach(i => console.log(i));
     }
 
+    // now we actually process the final instruction stream
     for (var instruction of processed) {
       var { type, key, value } = instruction;
       this.log(`> Assembling: ${type}/${key}/${value}`);
+      // each instruction has a matching method
       this[type](key, value);
     }
     return this.root;
   }
 
+  // methods for adding values to arbitrary targets (objects or arrays)
   append(target, key, value) {
     if (target instanceof Array) {
       return this.addToArray(target, key, value);
@@ -233,6 +255,9 @@ class Assembler {
     }
   }
 
+  // methods to handle each instruction
+  // there are relatively few of these, because after parsing, an ArchieML
+  // document basically just enters object/arrays and adds properties to them
   value(key, value) {
     var target = this.top;
     value = value.trim();
@@ -307,8 +332,9 @@ class Assembler {
     }
   }
 
+  // no-op instructions
+  // flush and skip are technically handled during pre-processing
   flush() {}
-
   skipped() {}
 }
 
