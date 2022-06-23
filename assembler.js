@@ -47,7 +47,7 @@ class Assembler {
   popContext() {
     var scope = this.stack.pop();
     if (!this.stack.length) this.stack = [this.root];
-    return scope;
+    return scope || this.root;
   }
 
   // given a key, sets the place in the object where the key should be placed
@@ -233,8 +233,8 @@ class Assembler {
   addToArray(target, key, value) {
     switch (target[TYPE]) {
       case "freeform":
-        key = key.replace(/^[\.+]*/, "");
         if (typeof value == "string") value = value.trim();
+        key = key.replace(/^[\.+]*/, "");
         target.push({ type: key, value });
         break;
 
@@ -269,6 +269,12 @@ class Assembler {
           break;
 
         case "freeform":
+          // you can't add non-dot composite objects to a freeform array
+          // so we'll exit the array and re-call this
+          if (typeof value == "object" && !key.match(/^\+?\./)) {
+            this.closeArray();
+            return this.value(key, value);
+          }
           target.push({ type: key, value });
           break;
 
@@ -320,8 +326,8 @@ class Assembler {
   }
 
   closeArray() {
-    while (!(this.top instanceof Array)) this.popContext();
-    this.popContext();
+    while (!(this.top instanceof Array) && this.top != this.root) this.popContext();
+    if (this.top instanceof Array) this.popContext();
   }
 
   buffer(key, value) {
