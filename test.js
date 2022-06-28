@@ -42,8 +42,14 @@ this: isn't a field`,
 
   freeform: [
     { type: "text", value: "this is a test block" },
-    { type: "key", value: "value" }
+    { type: "key", value: "value" },
+    { type: "quote", value: {
+      text: "Correctly parses."
+    }}
   ],
+  quote: {
+    error: "This should exit the array."
+  },
   strings: [
     "test",
     "a",
