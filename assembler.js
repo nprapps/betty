@@ -1,3 +1,4 @@
+
 // [TYPE] is used to set metadata on array types
 // this lets us use regular JS arrays, but tag them as "freeform" or whatever
 var TYPE = Symbol();
@@ -27,6 +28,7 @@ class Assembler {
     if (!this.options.verbose) return;
     console.log(
       args
+        .map(a => typeof a == "object" ? JSON.stringify(a) : a)
         .join(" ")
         .replace(/\n/g, "\\n")
         .replace(/\t/g, "\\t")
@@ -38,6 +40,10 @@ class Assembler {
   // in the output object tree - e.g., in a nested object inside an array
   get top() {
     return this.stack[this.stack.length - 1];
+  }
+
+  set top(value) {
+    this.stack[this.stack.length - 1] = value;
   }
 
   pushContext(scope) {
@@ -107,10 +113,8 @@ class Assembler {
 
   // following the instructions, assemble the final object
   assemble(instructions) {
-    if (this.options.verbose) {
-      this.log("Raw instructions stream");
-      instructions.forEach(i => console.log(i));
-    }
+    this.log("Raw instructions stream:");
+    instructions.forEach(i => this.log(" ", i));
     
     // pre-process to combine sequential buffered values into a single instruction
     // this initial pass makes it easier to handle blocks of arbitrary text
@@ -118,13 +122,8 @@ class Assembler {
     var interrupts = new Set(["skipped"]);
     var lastValue = null;
     var buffer = [];
-    var mergeBuffer = function() {
-      var merged = buffer.join("");
-      // only remove backslashes at the start of lines
-      // it's dumb but whatever
-      merged = merged.replace(/^\\/m, "");
-      return merged;
-    };
+    var mergeBuffer = () => buffer.join("").replace(/^\\/m, "");
+    this.log("Preprocessing...");
     for (var i = 0; i < instructions.length; i++) {
       var instruction = instructions[i];
       var { type, key, value } = instruction;
@@ -137,12 +136,12 @@ class Assembler {
             lastValue = instruction;
             break;
           } else {
-            this.log("Simple item being ignored");
+            this.log("  Simple item being ignored");
             value = key + value;
           }
 
         case "buffer":
-          this.log("Merging buffer instructions...");
+          this.log("  Merging buffer instructions...");
           buffer.push(value);
           var next = instructions[i + 1];
           while (next && next.type == "buffer") {
@@ -158,7 +157,7 @@ class Assembler {
             buffer.push(key + ":" + value);
             break;
           }
-          this.log(`Value encountered: ${key}`);
+          this.log(`  Value encountered: ${key}`);
           lastValue = instruction;
           var merged = mergeBuffer();
           if (merged.trim()) {
@@ -188,7 +187,7 @@ class Assembler {
           if (merged.trim()) {
             processed.push({ type: "buffer", value: merged });
           }
-          this.log(`Encountered ${type} (${key}), clearing buffer`);
+          this.log(`  Encountered ${type}${key ? ` (${key})` : ""}, clearing buffer`);
           buffer = [];
 
         default:
@@ -199,20 +198,19 @@ class Assembler {
 
     // handle leftover garbage in freeform arrays
     var merged = mergeBuffer();
-    this.log(`Clearing out dangling buffer items`);
+    this.log(`Clearing out dangling buffer items...`);
     if (merged.trim()) {
       processed.push({ type: "buffer", value: merged });
     }
 
-    if (this.options.verbose) {
-      this.log("Post-process instructions");
-      processed.forEach(i => console.log(i));
-    }
+    this.log("Post-process instructions:");
+    processed.forEach(i => this.log(" ", i));
 
     // now we actually process the final instruction stream
+    this.log("Assembling result object...")
     for (var instruction of processed) {
       var { type, key, value } = instruction;
-      this.log(`> Assembling: ${type}/${key}/${value}`);
+      this.log(`  ${[type,key,value].filter(d => d).join("/")}`);
       // each instruction has a matching method
       this[type](key, value);
     }
@@ -316,7 +314,6 @@ class Assembler {
   array(key) {
     var array = [];
     var target = this.getTarget(key);
-    var array = [];
     var last = this.normalizeKeypath(key).pop();
     if (last[0] == "+") {
       assignType(array, "freeform");
