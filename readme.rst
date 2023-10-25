@@ -13,9 +13,9 @@ A more specific dialect of `ArchieML <https://archieml.org>`_. While working wit
   * ``onFieldName`` - provide a callback that accepts a string key for mutation and returns the transformed version. Useful for lower-casing keys when Google Docs tries to capitalize them.
   * ``onValue`` - provide a callback that accepts the value and field name, and returns the actual value to add to the object. Useful for automatically casting dates, booleans, and numbers.
 
-The module exports a single object with a ``parse()`` method, which accepts the text you want to parse and the options object. Example code for use is located in ``test.js``. 
+The module exports a single object with a ``parse()`` method, which accepts the text you want to parse and the options object.
 
-You can also run the ``archieml-tests.js`` file to check against the files from the original specification repo where applicable. Although Betty is not fully-compliant with the ArchieML spec, it should handle existing content reliably.
+When adding new features or altering the parser, it's useful to make sure that you haven't broken anything. ``npm test`` will run a check against the files from the original specification repo where applicable, as well as a document containing the syntax extensions defined above. Although Betty is not fully-compliant with the ArchieML spec, it should handle existing content reliably.
 
 Behind the scenes
 -----------------
