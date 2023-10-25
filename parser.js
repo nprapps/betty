@@ -62,8 +62,10 @@ class Parser {
         [this.simpleListValue, "STAR", "TEXT"],
         [this.objectOpen, "LEFT_BRACE", "TEXT", "RIGHT_BRACE"],
         [this.objectClose, "LEFT_BRACE", "RIGHT_BRACE"],
+        [this.objectCloseNamed, "LEFT_BRACE", "SLASH", "TEXT", "RIGHT_BRACE"],
         [this.arrayOpen, "LEFT_BRACKET", "TEXT", "RIGHT_BRACKET"],
-        [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"]
+        [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"],
+        [this.arrayCloseNamed, "LEFT_BRACKET", "SLASH", "TEXT", "RIGHT_BRACKET"]
       ];
 
       // find a matching pattern and call it
@@ -224,6 +226,11 @@ class Parser {
     this.advance();
   }
 
+  objectCloseNamed() {
+    var [brace, slash, key] = trimStart(this.advance());
+    this.addInstruction("closeObject", key.value);
+  }
+
   // [arrayKey]
   arrayOpen() {
     var [_, key] = trimStart(this.peek());
@@ -238,6 +245,11 @@ class Parser {
   arrayClose() {
     this.addInstruction("closeArray");
     this.advance();
+  }
+
+  arrayCloseNamed() {
+    var [bracket, slash, key] = trimStart(this.advance());
+    this.addInstruction("closeArray", key.value);
   }
 
   // text is added to a generic buffer, since its use depends on the previous instructions

@@ -98,6 +98,11 @@ this: isn't a field`,
         ]
       }
     ],
+    named: {
+      sub: {
+        prop: "This is a named object"
+      }
+    },
     closing: "out of list",
     timestamp: Date.parse("2020-02-10T15:00:00.000Z")
   });

@@ -3,8 +3,11 @@
 // this lets us use regular JS arrays, but tag them as "freeform" or whatever
 var TYPE = Symbol();
 
-var assignType = (a, value) =>
-  Object.defineProperty(a, TYPE, {
+// [NAME] tags objects with their keys, for easy backtracking of {/name} syntax
+var NAME = Symbol();
+
+var assignSymbol = (a, symbol, value) =>
+  Object.defineProperty(a, symbol, {
     value,
     enumerable: false,
     configurable: false
@@ -241,7 +244,7 @@ class Assembler {
         break;
 
       default:
-        if (!target[TYPE]) assignType(target, "standard");
+        if (!target[TYPE]) assignSymbol(target, TYPE, "standard");
         // add to the last object in the array
         var last = target[target.length - 1];
         if (!last || this.getPath(last, key)) {
@@ -287,7 +290,7 @@ class Assembler {
   simple(key, value) {
     if (this.top instanceof Array) {
       if (this.top[TYPE] == "simple" || !this.top[TYPE]) {
-        assignType(this.top, "simple");
+        assignSymbol(this.top, TYPE, "simple");
         this.top.push(value.trim());
       }
 
@@ -302,29 +305,44 @@ class Assembler {
     var object = this.getPath(target, key);
     if (typeof object != "object") {
       object = {};
+      assignSymbol(object, NAME, key.split(".").pop());
     }
     this.append(target, key, object);
     this.pushContext(object);
   }
 
-  closeObject() {
+  closeObject(key) {
+    if (key) {
+      while (this.top != this.root && this.top[NAME] != key) this.popContext();
+    }
     this.popContext();
   }
 
   array(key) {
     var array = [];
+    assignSymbol(array, NAME, key.split(".").pop());
     var target = this.getTarget(key);
     var last = this.normalizeKeypath(key).pop();
     if (last[0] == "+") {
-      assignType(array, "freeform");
+      assignSymbol(array, TYPE, "freeform");
     }
     this.append(target, key, array);
     this.pushContext(array);
   }
 
-  closeArray() {
-    while (!(this.top instanceof Array) && this.top != this.root) this.popContext();
-    if (this.top instanceof Array) this.popContext();
+  closeArray(key) {
+    if (key) {
+      while (this.top != this.root) {
+        if (this.top instanceof Array && this.top[NAME] == key) {
+          this.popContext();
+          break;
+        }
+        this.popContext();
+      }
+    } else {
+      while (!(this.top instanceof Array) && this.top != this.root) this.popContext();
+      if (this.top instanceof Array) this.popContext();
+    }
   }
 
   buffer(key, value) {

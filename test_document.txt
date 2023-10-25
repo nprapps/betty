@@ -48,12 +48,6 @@ error: This should exit the array.
 
 []
 
-
-
-
-
-
-
 [strings]
 * test
 * a
@@ -81,7 +75,11 @@ a: 4
 [.nested]
 * one
 * two
-[]
-[]
+[/parent]
 
 closing: out of list
+
+{named}
+{.sub}
+prop: This is a named object
+{/named}

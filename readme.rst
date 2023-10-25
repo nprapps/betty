@@ -5,6 +5,8 @@ A more specific dialect of `ArchieML <https://archieml.org>`_. While working wit
 
 * Lists will start a new item when they see any redefined key, not just the first key in an object.
 * Multiline fields are now less ambiguous: open them with  ``key::`` and close with ``::key``.
+* You can choose which object to close by specifying the key: ``{/name}`` will close ``{name}``, or back out to to the middle level of ``{nested.name.inner}``.
+* Similarly, you can exit out of a specific named list with ``[/key]`` instead of needing to close individual levels with repeated ``[]`` lines
 * You can provide options for behavior:
 
   * ``verbose`` - set this to be overwhelmed with logging messages

@@ -7,7 +7,8 @@ var quick = {
   ":": "COLON",
   "*": "STAR",
   "\n": "TEXT",
-  "\\": "BACKSLASH"
+  "\\": "BACKSLASH",
+  "/": "SLASH"
 }
 
 module.exports = {
