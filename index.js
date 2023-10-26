@@ -21,8 +21,11 @@ var facade = {
     var assembler = new Assembler(options);
     var output = assembler.assemble(instructions);
     // console.log(output);
-    return output;
-  }
+    return structuredClone(output);
+  },
+  tokenize,
+  Parser,
+  Assembler
 };
 
 module.exports = facade;
