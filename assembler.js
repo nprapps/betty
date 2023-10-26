@@ -78,9 +78,6 @@ class Assembler {
   }
 
   // turn deep keypaths ("nested.key.string") into a path array
-  // as a side effect, moves the + flag to the start of the path
-  // this handles `.+key.path` vs `+.key.path`, both of which are
-  // (unfortunately) allowed by the spec and in the original tests
   normalizeKeypath(keypath) {
     if (typeof keypath == "string") keypath = keypath.split(".");
     keypath = keypath.filter(Boolean);
@@ -107,10 +104,9 @@ class Assembler {
   // creates objects along the way for missing keypath segments
   setPath(object, keypath, value) {
     keypath = this.normalizeKeypath(keypath);
-    var terminal = keypath.pop().replace(/\+/g, "");
+    var terminal = keypath.pop();
     var branch = object;
     for (var k of keypath) {
-      k = k.replace(/\+/g, "");
       if (!k) continue;
       if (!(k in branch) || typeof branch[k] != "object") {
         branch[k] = {};
@@ -248,7 +244,7 @@ class Assembler {
     switch (target[TYPE]) {
       case "freeform":
         if (typeof value == "string") value = value.trim();
-        key = key.replace(/^[\.+]*/, "");
+        key = key.replace(/^\./, "");
         var obj = { type: key, value };
         assignSymbol(obj, PARENT, target);
         target.push(obj);
@@ -288,7 +284,7 @@ class Assembler {
         case "freeform":
           // you can't add non-dot composite objects to a freeform array
           // so we'll exit the array and re-call this
-          if (typeof value == "object" && !key.match(/^\+?\./)) {
+          if (typeof value == "object" && key[0] != ".") {
             this.closeArray();
             return this.value(key, value);
           }
@@ -343,15 +339,15 @@ class Assembler {
     }
   }
 
-  array(key) {
+  array(key, type) {
     var array = [];
     var target = this.getTarget(key);
     var path = this.normalizeKeypath(key);
     var name = path.at(-1);
     var [head] = path;
     assignSymbol(array, NAME, name);
-    if (head[0] == "+") {
-      assignSymbol(array, TYPE, "freeform");
+    if (type) {
+      assignSymbol(array, TYPE, type);
     }
     this.append(target, key, array);
     this.pushContext(array);

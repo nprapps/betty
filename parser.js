@@ -238,7 +238,13 @@ class Parser {
     if (!k) {
       return this.arrayClose();
     }
-    this.addInstruction("array", k);
+    // process flags and type to save time later
+    var { path, flags } = k.match(/(?<flags>[\+\.]{0,2})(?<path>[^+.].*)/).groups;
+    var type = flags.includes("+") ? "freeform" : undefined;
+    if (flags.includes(".")) {
+      path = "." + path;
+    }
+    this.addInstruction("array", path, type);
     this.advance();
   }
 
