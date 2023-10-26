@@ -68,13 +68,13 @@ this: isn't a field`,
     },
     not: "in options",
 
-    freeform: [
+    free: { form: [
       { type: "text", value: "this is a test block" },
       { type: "key", value: "value" },
       { type: "quote", value: {
         text: "Correctly parses."
       }}
-    ],
+    ] },
     quote: {
       error: "This should exit the array."
     },
@@ -98,10 +98,13 @@ this: isn't a field`,
         ]
       }
     ],
-    named: {
+    named: { 
       sub: {
-        prop: "This is a named object"
-      }
+        inner: {
+          prop: "This is a named object"
+        }
+      },
+      outer: "Closing only one level"
     },
     closing: "out of list",
     timestamp: Date.parse("2020-02-10T15:00:00.000Z")

@@ -27,13 +27,12 @@ another ignored:line value
 
 {.child}
 block: true
-{}
 
-{}
+{/options}
 
 not: in options
 
-[+freeform]
+[+.free.form]
 this is a test block
 
 key: value
@@ -77,9 +76,10 @@ a: 4
 * two
 [/parent]
 
-closing: out of list
+closing:out of list
 
-{named}
-{.sub}
+{named.sub.inner}
 prop: This is a named object
-{/named}
+{/sub}
+outer: Closing only one level
+{}

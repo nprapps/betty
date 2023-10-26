@@ -1,10 +1,13 @@
 
 // [TYPE] is used to set metadata on array types
 // this lets us use regular JS arrays, but tag them as "freeform" or whatever
-var TYPE = Symbol();
+var TYPE = Symbol("TYPE");
 
 // [NAME] tags objects with their keys, for easy backtracking of {/name} syntax
-var NAME = Symbol();
+var NAME = Symbol("NAME");
+
+// [PARENT] lets us navigate back up the tree
+var PARENT = Symbol("PARENT");
 
 var assignSymbol = (a, symbol, value) =>
   Object.defineProperty(a, symbol, {
@@ -75,6 +78,9 @@ class Assembler {
   }
 
   // turn deep keypaths ("nested.key.string") into a path array
+  // as a side effect, moves the + flag to the start of the path
+  // this handles `.+key.path` vs `+.key.path`, both of which are
+  // (unfortunately) allowed by the spec and in the original tests
   normalizeKeypath(keypath) {
     if (typeof keypath == "string") keypath = keypath.split(".");
     keypath = keypath.filter(Boolean);
@@ -104,13 +110,20 @@ class Assembler {
     var terminal = keypath.pop().replace(/\+/g, "");
     var branch = object;
     for (var k of keypath) {
+      k = k.replace(/\+/g, "");
+      if (!k) continue;
       if (!(k in branch) || typeof branch[k] != "object") {
         branch[k] = {};
+        assignSymbol(branch[k], PARENT, branch);
+        assignSymbol(branch[k], NAME, k);
       }
       branch = branch[k];
     }
     if (typeof value == "string") value = value.trim();
     branch[terminal] = this.options.onValue(value, terminal);
+    if (typeof branch[terminal] == "object") {
+      assignSymbol(branch[terminal], PARENT, branch);
+    }
     return branch;
   }
 
@@ -236,7 +249,9 @@ class Assembler {
       case "freeform":
         if (typeof value == "string") value = value.trim();
         key = key.replace(/^[\.+]*/, "");
-        target.push({ type: key, value });
+        var obj = { type: key, value };
+        assignSymbol(obj, PARENT, target);
+        target.push(obj);
         break;
 
       case "simple":
@@ -250,6 +265,7 @@ class Assembler {
         if (!last || this.getPath(last, key)) {
           last = {};
           target.push(last);
+          assignSymbol(last, PARENT, target);
         }
         if (typeof value == "string") value = value.trim();
         this.setPath(last, key, value);
@@ -295,7 +311,9 @@ class Assembler {
       }
 
       if (this.top[TYPE] == "freeform") {
-        this.top.push({ type: "text", value: (key + value).trim() });
+        var obj = { type: "text", value: (key + value).trim() };
+        assignSymbol(obj, PARENT, this.top);
+        this.top.push(obj);
       }
     }
   }
@@ -303,27 +321,36 @@ class Assembler {
   object(key) {
     var target = this.getTarget(key);
     var object = this.getPath(target, key);
+    var path = this.normalizeKeypath(key);
     if (typeof object != "object") {
       object = {};
-      assignSymbol(object, NAME, key.split(".").pop());
+      var name = path.at(-1);
+      assignSymbol(object, NAME, name);
     }
     this.append(target, key, object);
     this.pushContext(object);
   }
 
   closeObject(key) {
+    // remove the current top scope
+    var top = this.popContext();
+    // navigate via parent up to the named object and push it onto the stack
     if (key) {
-      while (this.top != this.root && this.top[NAME] != key) this.popContext();
+      while (top != this.root && top[NAME] != key) {
+        top = top[PARENT];
+      }
+      this.pushContext(top[PARENT]);
     }
-    this.popContext();
   }
 
   array(key) {
     var array = [];
-    assignSymbol(array, NAME, key.split(".").pop());
     var target = this.getTarget(key);
-    var last = this.normalizeKeypath(key).pop();
-    if (last[0] == "+") {
+    var path = this.normalizeKeypath(key);
+    var name = path.at(-1);
+    var [head] = path;
+    assignSymbol(array, NAME, name);
+    if (head[0] == "+") {
       assignSymbol(array, TYPE, "freeform");
     }
     this.append(target, key, array);
@@ -332,12 +359,14 @@ class Assembler {
 
   closeArray(key) {
     if (key) {
-      while (this.top != this.root) {
-        if (this.top instanceof Array && this.top[NAME] == key) {
-          this.popContext();
-          break;
+       // remove the current top scope
+      var top = this.popContext();
+      // navigate via parent up to the named object and push it onto the stack
+      if (key) {
+        while (top != this.root && top[NAME] != key) {
+          top = top[PARENT];
         }
-        this.popContext();
+        this.pushContext(top[PARENT]);
       }
     } else {
       while (!(this.top instanceof Array) && this.top != this.root) this.popContext();

@@ -57,15 +57,15 @@ class Parser {
       // type-defined grammar
       // specifies a parsing function, followed by its token pattern
       var typeMatched = [
-        [this.singleValue, "TEXT", "COLON", "TEXT"],
-        [this.multilineValue, "TEXT", "COLON", "COLON", "TEXT"],
+        [this.multilineValue, "TEXT", "COLON", "COLON", "ANY"],
+        [this.singleValue, "TEXT", "COLON", "ANY"],
         [this.simpleListValue, "STAR", "TEXT"],
         [this.objectOpen, "LEFT_BRACE", "TEXT", "RIGHT_BRACE"],
         [this.objectClose, "LEFT_BRACE", "RIGHT_BRACE"],
         [this.objectCloseNamed, "LEFT_BRACE", "SLASH", "TEXT", "RIGHT_BRACE"],
         [this.arrayOpen, "LEFT_BRACKET", "TEXT", "RIGHT_BRACKET"],
         [this.arrayClose, "LEFT_BRACKET", "RIGHT_BRACKET"],
-        [this.arrayCloseNamed, "LEFT_BRACKET", "SLASH", "TEXT", "RIGHT_BRACKET"]
+        [this.arrayCloseNamed, "LEFT_BRACKET", "SLASH", "TEXT", "RIGHT_BRACKET"],
       ];
 
       // find a matching pattern and call it
@@ -124,7 +124,7 @@ class Parser {
   // match against token types
   matchTypes(...types) {
     var line = trimStart(this.peek());
-    return types.every((t, i) => line[i] && t == line[i].type);
+    return types.every((t, i) => line[i] && (t == "ANY" || t == line[i].type));
   }
 
   // match against values
@@ -228,7 +228,7 @@ class Parser {
 
   objectCloseNamed() {
     var [brace, slash, key] = trimStart(this.advance());
-    this.addInstruction("closeObject", key.value);
+    this.addInstruction("closeObject", key.value.trim());
   }
 
   // [arrayKey]
@@ -249,7 +249,7 @@ class Parser {
 
   arrayCloseNamed() {
     var [bracket, slash, key] = trimStart(this.advance());
-    this.addInstruction("closeArray", key.value);
+    this.addInstruction("closeArray", key.value.trim());
   }
 
   // text is added to a generic buffer, since its use depends on the previous instructions
