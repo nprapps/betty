@@ -212,7 +212,7 @@ class Parser {
     // ignore the bracket, get the key name
     var [_, key] = trimStart(this.peek());
     var k = key.value.trim();
-    // handle {}, which closes an object
+    // handle { }, which closes an object
     if (!k) {
       return this.objectClose();
     }
@@ -235,10 +235,12 @@ class Parser {
   arrayOpen() {
     var [_, key] = trimStart(this.peek());
     var k = key.value.trim();
+    // handle [ ], where the array should close despite the whitespace
     if (!k) {
       return this.arrayClose();
     }
     // process flags and type to save time later
+    // unfortunately, + and . prefixes can be in any order
     var { path, flags } = k.match(/(?<flags>[\+\.]{0,2})(?<path>[^+.].*)/).groups;
     var type = flags.includes("+") ? "freeform" : undefined;
     if (flags.includes(".")) {
