@@ -2,19 +2,20 @@ var assert = require("assert");
 var fs = require("fs");
 var { parse } = require("./index");
 
-var testFiles = fs.readdirSync("tests");
-var passed = 0;
-var possible = testFiles.length + 1;
+var manual = process.argv[2];
+if (manual) {
+  runSpecTest(manual + ".aml", true);
+  process.exit();
+}
 
-// archieML tests
-for (var f of testFiles) {
-  var contents = fs.readFileSync(`tests/${f}`, "utf-8");
-  var product = parse(contents, { verbose: false });
+function runSpecTest(file, verbose = false) {
+  var contents = fs.readFileSync(`tests/${file}`, "utf-8");
+  var product = parse(contents, { verbose });
   var { test, result } = product;
   delete product.test
   delete product.result;
   result = JSON.parse(result);
-  console.log(`\n==== ${f} ====`);
+  console.log(`\n==== ${file} ====`);
   console.log("TEST: ",  test);
   console.log("EXPECTED: ", JSON.stringify(result));
   console.log("FOUND: ", JSON.stringify(product));
@@ -28,7 +29,15 @@ for (var f of testFiles) {
   }
 }
 
-// custom tests
+// run all archieML tests
+var testFiles = fs.readdirSync("tests");
+var passed = 0;
+var possible = testFiles.length + 1;
+for (var f of testFiles) {
+  runSpecTest(f);
+}
+
+// syntax extension tests
 console.log(`\n==== Betty extensions ====`)
 var text = fs.readFileSync("test_document.txt", "utf-8");
 var parsed = parse(text, {
